@@ -1,8 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    // Node16 rather than the legacy "CommonJS"/"Node" (node10) pair: node10
+    // resolution is deprecated and errors outright on TypeScript 7. That
+    // matters here because consumers install this package straight from a git
+    // tag, where the `prepare` script runs against whatever tsc the *consumer*
+    // resolves — not the version pinned in devDependencies. With no "type"
+    // field in package.json, Node16 still emits CommonJS.
+    "module": "Node16",
+    "moduleResolution": "Node16",
     "lib": ["ES2022", "DOM"],
     "strict": true,
     "declaration": true,
