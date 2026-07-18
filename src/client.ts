@@ -34,6 +34,7 @@ import {
 import {
   createUsageTracker,
   readTokenUsage,
+  type UsageSink,
   type UsageSummary,
   type UsageTracker,
 } from './usage'
@@ -80,6 +81,8 @@ export type ChatOptions = {
   /** Capability requirements; may override `model` when it can't comply. */
   requirements?: ModelRequirements
   signal?: AbortSignal
+  /** App-defined tag forwarded to `usageSink` (gym uses it for the feature). */
+  usageLabel?: string
   /** Per-request timeout. Overrides the client default. */
   timeoutMs?: number
   /** Retry policy for this request. Overrides the client default. */
@@ -127,6 +130,12 @@ export type CreateAiClientOptions = {
   env?: EnvSource
   /** Model used when nothing is stored. Defaults to the first catalog entry. */
   defaultModel?: { modelId: string; providerId?: string }
+  /**
+   * Optional destination for per-request usage events, for apps that keep a
+   * richer log than the kit's day counters (gym-copilot's SQLite AiUsageLog).
+   * Additive — the counters are still maintained.
+   */
+  usageSink?: UsageSink
   /** Default per-request timeout. Defaults to 20s. */
   timeoutMs?: number
   /** Default retry policy. Defaults to one retry with a 500ms base delay. */
@@ -266,6 +275,7 @@ export function createAiClient(opts: CreateAiClientOptions): AiClient {
     // would get progressively less of a chance to succeed.
     const attempt = async (): Promise<ChatResult> => {
       const timer = timeoutSignal(timeoutMs, options?.signal)
+      const startedAt = Date.now()
       try {
         const response = await doFetch(
           `${provider.baseUrl}${provider.chatPath}`,
@@ -293,6 +303,20 @@ export function createAiClient(opts: CreateAiClientOptions): AiClient {
         const data: unknown = await response.json()
         const tokens = readTokenUsage(data)
         await usage.record(provider.id, model.id, tokens)
+
+        if (opts.usageSink) {
+          // Bookkeeping must never fail a request that actually succeeded.
+          await opts.usageSink
+            .record({
+              providerId: provider.id,
+              modelId: model.id,
+              ...(tokens ? { tokens } : {}),
+              durationMs: Date.now() - startedAt,
+              at: new Date(),
+              ...(options?.usageLabel ? { label: options.usageLabel } : {}),
+            })
+            .catch(() => undefined)
+        }
 
         const text = extractText(data)
         if (text === null) {

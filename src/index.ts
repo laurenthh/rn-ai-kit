@@ -90,7 +90,9 @@ export {
   usageKey,
   type ModelPricing,
   type TokenUsage,
+  type UsageEvent,
   type UsageRecord,
+  type UsageSink,
   type UsageSummary,
   type UsageTracker,
 } from './usage'

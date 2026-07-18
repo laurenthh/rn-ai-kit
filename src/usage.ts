@@ -93,6 +93,46 @@ export type ModelPricing = {
   currency: 'USD'
 }
 
+/**
+ * One completed request, for apps that want richer accounting than the kit's
+ * own day-bucketed counters.
+ *
+ * The counters exist to answer "how much of today's allowance is left", and
+ * `KVStorage` is the right shape for that. They are the *wrong* shape for a
+ * per-request history: gym-copilot keeps an append-only `AiUsageLog` table with
+ * a `context` (which feature made the call) and `durationMs`, aggregated with
+ * SQL. Expressing that through get/set/delete would mean rewriting a growing
+ * JSON blob on every call and discarding both of those columns.
+ *
+ * So a sink is an **additive** hook rather than a replacement: the kit keeps
+ * its counters, and an app that wants a real log gets every event too.
+ */
+export type UsageEvent = {
+  providerId: string
+  modelId: string
+  /** Absent when the provider reports no token counts. */
+  tokens?: TokenUsage
+  /** Wall-clock duration of the request. */
+  durationMs: number
+  at: Date
+  /**
+   * Free-form app-defined tag — gym uses it for which feature made the call
+   * ('program-generation', 'workout-generation', …). The kit never interprets
+   * it, which is what keeps the app's vocabulary out of the package.
+   */
+  label?: string
+}
+
+/**
+ * Optional destination for completed-request events.
+ *
+ * Failures here must never fail the request that produced them — the client
+ * swallows them, since accounting is bookkeeping, not the product.
+ */
+export interface UsageSink {
+  record(event: UsageEvent): Promise<void>
+}
+
 export type UsageTracker = {
   isRateLimited(providerId: string, modelId: string): Promise<boolean>
   /** Seconds until the model is usable again; 0 when not limited. */

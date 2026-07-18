@@ -303,3 +303,105 @@ describe('chunking', () => {
     expect(chunkCount(20, 0)).toBe(1)
   })
 })
+
+describe('usage sink', () => {
+  it('emits a per-request event alongside the kit’s own counters', async () => {
+    const events: unknown[] = []
+    const fetchImpl = vi.fn().mockResolvedValue(
+      (() => {
+        const r = completion('ok') as unknown as {
+          json: () => Promise<unknown>
+        }
+        r.json = async () => ({
+          choices: [{ message: { content: 'ok' } }],
+          usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
+        })
+        return r
+      })(),
+    )
+
+    const client = createAiClient({
+      storage: createMemoryStorageBundle({
+        secrets: {
+          [credentialStorageKey('github-models', 'apiKey')]: 'pat-token',
+        },
+      }),
+      providers: [githubModels],
+      catalog,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      usageSink: {
+        record: async (event) => {
+          events.push(event)
+        },
+      },
+    })
+
+    await client.chat([{ role: 'user', content: 'hi' }], {
+      usageLabel: 'program-generation',
+    })
+
+    expect(events).toHaveLength(1)
+    const event = events[0] as {
+      providerId: string
+      modelId: string
+      label?: string
+      durationMs: number
+      tokens?: { totalTokens: number }
+    }
+    expect(event.providerId).toBe('github-models')
+    expect(event.modelId).toBe('openai/gpt-4.1-mini')
+    expect(event.label).toBe('program-generation')
+    expect(event.tokens?.totalTokens).toBe(14)
+    expect(typeof event.durationMs).toBe('number')
+
+    // The kit's own counters are still maintained — the sink is additive.
+    const record = await client.usage.read('github-models', 'openai/gpt-4.1-mini')
+    expect(record.requests).toBe(1)
+  })
+
+  it('does not fail the request when the sink throws', async () => {
+    // Accounting is bookkeeping, not the product.
+    const fetchImpl = vi.fn().mockResolvedValue(completion('still fine'))
+    const client = createAiClient({
+      storage: createMemoryStorageBundle({
+        secrets: {
+          [credentialStorageKey('github-models', 'apiKey')]: 'pat-token',
+        },
+      }),
+      providers: [githubModels],
+      catalog,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      usageSink: {
+        record: async () => {
+          throw new Error('database is locked')
+        },
+      },
+    })
+
+    const result = await client.chat([{ role: 'user', content: 'hi' }])
+    expect(result.text).toBe('still fine')
+  })
+
+  it('emits nothing for a failed request', async () => {
+    const events: unknown[] = []
+    const fetchImpl = vi.fn().mockResolvedValue(failure(400))
+    const client = createAiClient({
+      storage: createMemoryStorageBundle({
+        secrets: {
+          [credentialStorageKey('github-models', 'apiKey')]: 'pat-token',
+        },
+      }),
+      providers: [githubModels],
+      catalog,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      usageSink: {
+        record: async (event) => {
+          events.push(event)
+        },
+      },
+    })
+
+    await client.chat([{ role: 'user', content: 'hi' }]).catch(() => undefined)
+    expect(events).toHaveLength(0)
+  })
+})
