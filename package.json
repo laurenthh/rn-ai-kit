@@ -1,0 +1,30 @@
+{
+  "name": "rn-ai-kit",
+  "version": "1.0.0",
+  "description": "Provider-agnostic LLM client for the copilot apps — multi-provider chat, credential handling, billing-aware usage tracking, and schema-validated tasks. No React Native imports, no runtime dependencies.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "zod": "^3.23.0 || ^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^3.0.5",
+    "zod": "^4.1.5"
+  }
+}
