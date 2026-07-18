@@ -162,7 +162,16 @@ export function createAiClient(opts: CreateAiClientOptions): AiClient {
     env: opts.env,
   })
   const usage = createUsageTracker({ data: opts.storage.data, now: opts.now })
-  const doFetch = opts.fetchImpl ?? globalThis.fetch
+  /**
+   * Resolve `fetch` per call, not once at construction.
+   *
+   * Capturing `globalThis.fetch` up front breaks two real cases: a host whose
+   * fetch polyfill installs after this module is first imported, and any test
+   * that stubs `global.fetch` after building a client. An explicit `fetchImpl`
+   * still wins and is still captured, since that one is the caller's choice.
+   */
+  const doFetch: typeof fetch = (...args) =>
+    (opts.fetchImpl ?? globalThis.fetch)(...args)
 
   function requireProvider(id: string): Provider {
     const provider = findProvider(providers, id)

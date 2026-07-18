@@ -164,6 +164,48 @@ describe('chat', () => {
       type: 'json_object',
     })
   })
+
+  it('resolves globalThis.fetch per call, not once at construction', async () => {
+    // Regression: capturing globalThis.fetch at construction breaks hosts whose
+    // fetch polyfill installs after this module loads, and silently ignores any
+    // test that stubs global.fetch after building a client. Found while
+    // adopting the kit in chef-copilot, where every mapped-error test failed
+    // as a generic network error.
+    const original = globalThis.fetch
+    try {
+      const client = createAiClient({
+        storage: configuredStorage(),
+        providers: [githubModels],
+        catalog,
+        // No fetchImpl — must fall through to globalThis at call time.
+      })
+
+      const late = vi.fn().mockResolvedValue(completion('late binding works'))
+      globalThis.fetch = late as unknown as typeof fetch
+
+      const result = await client.chat([{ role: 'user', content: 'hi' }], {
+        model: 'openai/gpt-4.1-mini',
+      })
+
+      expect(result.text).toBe('late binding works')
+      expect(late).toHaveBeenCalledTimes(1)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('still prefers an explicit fetchImpl over the global', async () => {
+    const explicit = vi.fn().mockResolvedValue(completion('explicit'))
+    const client = makeClient({
+      fetchImpl: explicit as unknown as typeof fetch,
+    })
+
+    const result = await client.chat([{ role: 'user', content: 'hi' }], {
+      model: 'openai/gpt-4.1-mini',
+    })
+
+    expect(result.text).toBe('explicit')
+  })
 })
 
 describe('credentials', () => {
