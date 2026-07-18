@@ -12,6 +12,28 @@ export {
 } from './client'
 
 export {
+  AiTimeoutError,
+} from './errors'
+
+export {
+  defaultRetryPolicy,
+  isRetryable,
+  retryDelayFor,
+  timeoutSignal,
+  withRetry,
+  DEFAULT_TIMEOUT_MS,
+  type RetryPolicy,
+} from './retry'
+
+export {
+  chunkCount,
+  estimateTokenBudget,
+  groupsPerChunk,
+  shouldChunk,
+  type TokenBudgetSpec,
+} from './budget'
+
+export {
   defineAiTask,
   parseJson,
   repairTruncatedJson,

@@ -38,6 +38,26 @@ import {
   type UsageTracker,
 } from './usage'
 import type { StorageBundle } from './storage'
+import {
+  AiTimeoutError,
+  NoSuitableModelError,
+  ProviderApiError,
+  RateLimitedError,
+} from './errors'
+import {
+  defaultRetryPolicy,
+  timeoutSignal,
+  withRetry,
+  DEFAULT_TIMEOUT_MS,
+  type RetryPolicy,
+} from './retry'
+
+export {
+  AiTimeoutError,
+  NoSuitableModelError,
+  ProviderApiError,
+  RateLimitedError,
+}
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant'
@@ -60,6 +80,10 @@ export type ChatOptions = {
   /** Capability requirements; may override `model` when it can't comply. */
   requirements?: ModelRequirements
   signal?: AbortSignal
+  /** Per-request timeout. Overrides the client default. */
+  timeoutMs?: number
+  /** Retry policy for this request. Overrides the client default. */
+  retry?: RetryPolicy
 }
 
 export type ChatResult = {
@@ -68,52 +92,6 @@ export type ChatResult = {
   provider: Provider
   /** Undefined when the provider doesn't report token counts. */
   tokens?: { promptTokens: number; completionTokens: number; totalTokens: number }
-}
-
-export class RateLimitedError extends Error {
-  readonly providerId: string
-  readonly modelId: string
-  readonly retryAfterSeconds: number
-
-  constructor(providerId: string, modelId: string, retryAfterSeconds: number) {
-    super(
-      `Rate limit reached for ${modelId}. Retry in ${retryAfterSeconds}s.`,
-    )
-    this.name = 'RateLimitedError'
-    this.providerId = providerId
-    this.modelId = modelId
-    this.retryAfterSeconds = retryAfterSeconds
-  }
-}
-
-export class ProviderApiError extends Error {
-  readonly status: number
-  readonly providerId: string
-  readonly body: string
-
-  constructor(provider: Provider, status: number, body: string) {
-    super(`${provider.label} API error: ${status} — ${body}`)
-    this.name = 'ProviderApiError'
-    this.status = status
-    this.providerId = provider.id
-    this.body = body
-  }
-}
-
-export class NoSuitableModelError extends Error {
-  constructor(requirements: ModelRequirements) {
-    const needs = [
-      requirements.vision ? 'image input' : null,
-      requirements.jsonMode ? 'JSON mode' : null,
-    ]
-      .filter(Boolean)
-      .join(' and ')
-    super(
-      `No configured model supports ${needs || 'this task'}. ` +
-        `Add credentials for a provider that offers one, or pick a different model in Settings.`,
-    )
-    this.name = 'NoSuitableModelError'
-  }
 }
 
 export type AiClient = {
@@ -149,6 +127,10 @@ export type CreateAiClientOptions = {
   env?: EnvSource
   /** Model used when nothing is stored. Defaults to the first catalog entry. */
   defaultModel?: { modelId: string; providerId?: string }
+  /** Default per-request timeout. Defaults to 20s. */
+  timeoutMs?: number
+  /** Default retry policy. Defaults to one retry with a 500ms base delay. */
+  retry?: RetryPolicy
   /** Injected for tests. */
   fetchImpl?: typeof fetch
   now?: () => Date
@@ -276,45 +258,68 @@ export function createAiClient(opts: CreateAiClientOptions): AiClient {
       payload.response_format = { type: 'json_object' }
     }
 
-    const response = await doFetch(`${provider.baseUrl}${provider.chatPath}`, {
-      method: 'POST',
-      headers: buildAuthHeaders(provider, resolved.values),
-      body: JSON.stringify(payload),
-      ...(options?.signal ? { signal: options.signal } : {}),
-    })
+    const timeoutMs = options?.timeoutMs ?? opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    const retry = options?.retry ?? opts.retry ?? defaultRetryPolicy
 
-    if (response.status === 429) {
-      const header = response.headers?.get?.('retry-after')
-      const parsed = header ? parseInt(header, 10) : NaN
-      const seconds = Number.isNaN(parsed) ? 60 : parsed
-      await usage.markRateLimited(provider.id, model.id, seconds)
-      throw new RateLimitedError(provider.id, model.id, seconds)
+    // One attempt. `withRetry` re-runs this whole body, including a fresh
+    // timeout — a retry that inherited the first attempt's remaining time
+    // would get progressively less of a chance to succeed.
+    const attempt = async (): Promise<ChatResult> => {
+      const timer = timeoutSignal(timeoutMs, options?.signal)
+      try {
+        const response = await doFetch(
+          `${provider.baseUrl}${provider.chatPath}`,
+          {
+            method: 'POST',
+            headers: buildAuthHeaders(provider, resolved.values),
+            body: JSON.stringify(payload),
+            signal: timer.signal,
+          },
+        )
+
+        if (response.status === 429) {
+          const header = response.headers?.get?.('retry-after')
+          const parsed = header ? parseInt(header, 10) : NaN
+          const seconds = Number.isNaN(parsed) ? 60 : parsed
+          await usage.markRateLimited(provider.id, model.id, seconds)
+          throw new RateLimitedError(provider.id, model.id, seconds)
+        }
+
+        if (!response.ok) {
+          const body = await response.text().catch(() => '')
+          throw new ProviderApiError(provider, response.status, body)
+        }
+
+        const data: unknown = await response.json()
+        const tokens = readTokenUsage(data)
+        await usage.record(provider.id, model.id, tokens)
+
+        const text = extractText(data)
+        if (text === null) {
+          throw new ProviderApiError(
+            provider,
+            response.status,
+            'Response contained no assistant message',
+          )
+        }
+
+        return {
+          text,
+          model,
+          provider,
+          ...(tokens ? { tokens } : {}),
+        }
+      } catch (error) {
+        // Distinguish our own timeout from the caller cancelling: a timeout is
+        // transient and retryable, a user cancellation is neither.
+        if (timer.timedOut()) throw new AiTimeoutError(timeoutMs)
+        throw error
+      } finally {
+        timer.dispose()
+      }
     }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '')
-      throw new ProviderApiError(provider, response.status, body)
-    }
-
-    const data: unknown = await response.json()
-    const tokens = readTokenUsage(data)
-    await usage.record(provider.id, model.id, tokens)
-
-    const text = extractText(data)
-    if (text === null) {
-      throw new ProviderApiError(
-        provider,
-        response.status,
-        'Response contained no assistant message',
-      )
-    }
-
-    return {
-      text,
-      model,
-      provider,
-      ...(tokens ? { tokens } : {}),
-    }
+    return withRetry(attempt, retry, options?.signal)
   }
 
   return {

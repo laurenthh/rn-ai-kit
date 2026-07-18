@@ -189,6 +189,46 @@ ships no price data — vendor prices change without notice, and a stale number
 shown as fact is worse than no number. Supply pricing per model if you want
 cost estimates.
 
+## Timeouts and retries
+
+Every request carries a timeout (20s by default) and one retry, both
+configurable per client or per call:
+
+```ts
+createAiClient({ timeoutMs: 45_000, retry: { count: 2, delayMs: 500 }, ... })
+await ai.chat(messages, { timeoutMs: 10_000, retry: { count: 0, delayMs: 0 } })
+```
+
+A timeout surfaces as `AiTimeoutError`, deliberately distinct from a caller
+abort via `signal` — a timeout is transient and retryable, a user cancelling is
+neither. **Credential and capability failures are never retried**: retrying a
+missing key wastes the user's time and, on a metered provider, their money.
+Each retry gets a *fresh* timeout rather than the remainder of the first.
+
+The timeout is built from `AbortController` + `setTimeout`, not
+`AbortSignal.timeout()` — that static does not exist in React Native's Hermes
+runtime, so using it fails on device while passing every Node-based test. This
+is the single most useful thing the kit takes off consumers' hands.
+
+## Token budgeting and chunking
+
+For jobs too large for one response — generating a long training program, say —
+`estimateTokenBudget` sizes the request and `shouldChunk` / `groupsPerChunk`
+decide how to split it:
+
+```ts
+const budget = estimateTokenBudget(sessions, {
+  base: 300, perUnit: 120, min: 1_200, max: 4_000,
+})
+if (shouldChunk(sessions, 8)) {
+  const weeksPerChunk = groupsPerChunk(8, workoutsPerWeek)
+}
+```
+
+These take a **unit count**, not your domain objects. Converting weeks and
+workouts into a number of units is the app's job — the package stays free of
+any app's nouns.
+
 ## Rate limits
 
 A 429 parks that **provider + model** pair until `retry-after` elapses;
