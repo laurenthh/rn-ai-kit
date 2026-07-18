@@ -248,6 +248,34 @@ describe('parseJson', () => {
   it('throws on text with no JSON in it', () => {
     expect(() => parseJson('no json here')).toThrow(/not valid JSON/)
   })
+
+  // DeepSeek R1 does this even with response_format: json_object requested —
+  // confirmed against the live GitHub Models endpoint on 2026-07-18.
+  it('skips a reasoning model’s <think> preamble', () => {
+    const raw =
+      '<think>\nOkay, the user wants JSON. Maybe {"city": something}? Let me decide.\n</think>\n{"city":"Lisbon","country":"Portugal"}'
+    expect(parseJson(raw)).toEqual({ city: 'Lisbon', country: 'Portugal' })
+  })
+
+  it('is not fooled by braces inside string values', () => {
+    expect(parseJson('Here: {"note":"use {braces} freely","n":1}')).toEqual({
+      note: 'use {braces} freely',
+      n: 1,
+    })
+  })
+
+  it('is not fooled by an escaped quote inside a string value', () => {
+    expect(parseJson('{"note":"a \\" quote","n":2}')).toEqual({
+      note: 'a " quote',
+      n: 2,
+    })
+  })
+
+  it('prefers the full payload over a smaller object nested in the preamble', () => {
+    const raw =
+      'Example format was {"a":1}. Actual answer:\n{"city":"Porto","tags":["x","y"]}'
+    expect(parseJson(raw)).toEqual({ city: 'Porto', tags: ['x', 'y'] })
+  })
 })
 
 describe('repairTruncatedJson', () => {

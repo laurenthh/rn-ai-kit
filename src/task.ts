@@ -199,21 +199,15 @@ export function parseJson(content: string): unknown {
     /* fall through */
   }
 
-  const objectMatch = trimmed.match(/\{[\s\S]*\}/)
-  if (objectMatch) {
+  // Reasoning models (DeepSeek R1) emit a <think> block before the JSON even
+  // with JSON mode requested, and that block can itself contain braces. A
+  // greedy first-brace-to-last-brace match spans both and parses as neither,
+  // so scan for genuinely balanced candidates instead.
+  for (const candidate of balancedCandidates(trimmed)) {
     try {
-      return JSON.parse(objectMatch[0])
+      return JSON.parse(candidate)
     } catch {
-      /* fall through */
-    }
-  }
-
-  const arrayMatch = trimmed.match(/\[[\s\S]*\]/)
-  if (arrayMatch) {
-    try {
-      return JSON.parse(arrayMatch[0])
-    } catch {
-      /* fall through */
+      /* try the next candidate */
     }
   }
 
@@ -221,6 +215,54 @@ export function parseJson(content: string): unknown {
   if (repaired !== null) return repaired
 
   throw new Error('response was not valid JSON')
+}
+
+/**
+ * Every balanced `{…}` / `[…]` substring, longest first.
+ *
+ * String contents and escapes are respected so a brace inside a JSON string
+ * doesn't throw the depth count off. Longest-first means the real payload wins
+ * over a small object nested inside a preamble.
+ */
+function balancedCandidates(raw: string): string[] {
+  const candidates: string[] = []
+
+  for (let i = 0; i < raw.length; i++) {
+    const open = raw[i]
+    if (open !== '{' && open !== '[') continue
+
+    let depth = 0
+    let inString = false
+    let escaped = false
+
+    for (let j = i; j < raw.length; j++) {
+      const ch = raw[j]!
+
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (inString) {
+        if (ch === '\\') escaped = true
+        else if (ch === '"') inString = false
+        continue
+      }
+      if (ch === '"') {
+        inString = true
+        continue
+      }
+      if (ch === '{' || ch === '[') depth++
+      else if (ch === '}' || ch === ']') {
+        depth--
+        if (depth === 0) {
+          candidates.push(raw.slice(i, j + 1))
+          break
+        }
+      }
+    }
+  }
+
+  return candidates.sort((a, b) => b.length - a.length)
 }
 
 /** Strip a ```json … ``` fence, which JSON mode does not prevent. */
