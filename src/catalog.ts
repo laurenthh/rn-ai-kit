@@ -7,10 +7,10 @@
  * prices (DeepSeek via GitHub Models vs. via DeepSeek's own API is exactly
  * this case, and they are two distinct entries here).
  *
- * Seeded ids were verified on 2026-07-18 against
- * `GET https://models.github.ai/catalog/models` for the GitHub Models entries,
- * and each vendor's own API reference for the rest. Ids churn; treat this as a
- * starting point and use `discoverModels()` for a live list.
+ * Seeded ids were verified against each vendor's own API reference or live
+ * models endpoint (gemini/openrouter on 2026-08-22; xai/deepseek/zai on
+ * 2026-07-18). Ids churn; treat this as a starting point and use
+ * `discoverModels()` for a live list.
  */
 
 import type { ModelPricing } from './usage'
@@ -40,83 +40,49 @@ export type ModelInfo = {
 }
 
 /**
- * GitHub Models entries. Ids and vision capability read directly from the
- * live catalog's `supported_input_modalities` on 2026-07-18.
- *
- * `dailyLimit` values are carried over from travel-copilot's existing
- * `AI_MODELS` list (its low/high rate-limit tiers), not from the catalog
- * endpoint — the endpoint exposes a tier name, not a number.
+ * Google Gemini entries (OpenAI-compatible endpoint). Ids verified against
+ * Google's model documentation on 2026-08-22 (`gemini-3.7-flash` GA
+ * 2026-08-13). No `dailyLimit` is seeded: free-tier caps vary by model,
+ * region, and account, and AI Studio shows the live number — a wrong cap
+ * displayed as fact is worse than none.
  */
-export const githubModelsCatalog: ModelInfo[] = [
+export const geminiCatalog: ModelInfo[] = [
   {
-    id: 'openai/gpt-4.1-mini',
-    provider: 'github-models',
-    label: 'GPT-4.1 mini',
+    id: 'gemini-3.7-flash',
+    provider: 'gemini',
+    label: 'Gemini 3.7 Flash',
     vision: true,
-    dailyLimit: 150,
     supportsJsonMode: true,
-    contextNotes: 'Default. Fast, high daily allowance.',
-  },
-  {
-    id: 'openai/gpt-4.1',
-    provider: 'github-models',
-    label: 'GPT-4.1',
-    vision: true,
-    dailyLimit: 50,
-    supportsJsonMode: true,
-    contextNotes: 'Higher quality, lower allowance.',
-  },
-  {
-    id: 'openai/gpt-4o-mini',
-    provider: 'github-models',
-    label: 'GPT-4o mini',
-    vision: true,
-    dailyLimit: 150,
-    supportsJsonMode: true,
-  },
-  {
-    id: 'openai/gpt-4o',
-    provider: 'github-models',
-    label: 'GPT-4o',
-    vision: true,
-    dailyLimit: 50,
-    supportsJsonMode: true,
-  },
-  {
-    id: 'deepseek/deepseek-v3-0324',
-    provider: 'github-models',
-    label: 'DeepSeek V3',
-    vision: false,
-    dailyLimit: 50,
-    contextNotes: 'Text only — cannot back document scanning.',
-  },
-  {
-    id: 'deepseek/deepseek-r1',
-    provider: 'github-models',
-    label: 'DeepSeek R1',
-    vision: false,
-    contextNotes: 'Reasoning model, custom rate-limit tier. Text only.',
-  },
-  {
-    id: 'meta/llama-4-scout-17b-16e-instruct',
-    provider: 'github-models',
-    label: 'Llama 4 Scout',
-    vision: true,
-    dailyLimit: 50,
-  },
-  {
-    id: 'mistral-ai/mistral-medium-2505',
-    provider: 'github-models',
-    label: 'Mistral Medium',
-    vision: true,
-    dailyLimit: 150,
+    contextNotes: 'Default. Free-tier eligible; image + PDF input.',
   },
 ]
 
 /**
- * Models reachable only through their vendor's own API — these are absent
- * from the GitHub Models catalog entirely, which is the reason the provider
- * abstraction exists.
+ * OpenRouter entries. Ids verified against the live public
+ * `GET https://openrouter.ai/api/v1/models` on 2026-08-22 — but this seed is
+ * a starting point only: the whole point of OpenRouter is its live catalog,
+ * so hosts should prefer `discoverModels('openrouter')` (public, keyless).
+ */
+export const openrouterCatalog: ModelInfo[] = [
+  {
+    id: 'google/gemini-3.7-flash',
+    provider: 'openrouter',
+    label: 'Gemini 3.7 Flash (OpenRouter)',
+    vision: true,
+    supportsJsonMode: true,
+  },
+  {
+    id: 'google/gemma-4-31b-it:free',
+    provider: 'openrouter',
+    label: 'Gemma 4 31B (free)',
+    vision: true,
+    contextNotes: 'Free variant — rate-limited, availability rotates.',
+  },
+]
+
+/**
+ * Models reachable only through their vendor's own API — the reason the
+ * provider abstraction exists.
  *
  * No `pricing` is set: the kit does not ship price data it has not verified,
  * and vendor prices change without notice. Supply pricing per model from the
@@ -161,7 +127,8 @@ export const directProviderCatalog: ModelInfo[] = [
 ]
 
 export const builtInCatalog: ModelInfo[] = [
-  ...githubModelsCatalog,
+  ...geminiCatalog,
+  ...openrouterCatalog,
   ...directProviderCatalog,
 ]
 

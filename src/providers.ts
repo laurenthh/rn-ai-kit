@@ -146,41 +146,78 @@ export function defineProvider(
 // ── Bundled providers ──────────────────────────────────────────────────────
 //
 // Base URLs and auth schemes verified against each provider's own API
-// reference on 2026-07-18. Model ids live in `catalog.ts`, deliberately
-// separate: ids churn far faster than endpoints do.
+// reference on 2026-07-18 (xai/deepseek/zai) and 2026-08-22 (gemini,
+// openrouter). Model ids live in `catalog.ts`, deliberately separate: ids
+// churn far faster than endpoints do.
 
 /**
- * GitHub Models. Included with a GitHub account; metered as a per-model daily
- * request quota rather than per token, which is why its billing kind is
- * `quota` and its usage display is "N of M requests left today".
+ * Providers retired by their vendor. Kept as data so a host app can map a
+ * stored provider id to a human explanation instead of a raw HTTP error.
+ * GitHub Models was fully retired on 2026-07-30 (staged brownouts on
+ * 07-16/07-23); its endpoints return 410 `github_models_retirement_brownout`.
  */
-export const githubModels: Provider = {
-  id: 'github-models',
-  label: 'GitHub Models',
-  baseUrl: 'https://models.github.ai',
-  chatPath: '/inference/chat/completions',
-  // Public — unauthenticated GET returns the full catalog.
-  modelsPath: '/catalog/models',
-  auth: { kind: 'bearer', credentialKey: 'apiKey' },
-  extraHeaders: { Accept: 'application/vnd.github+json' },
+export const retiredProviders: Record<string, string> = {
+  'github-models':
+    'GitHub Models was shut down by GitHub on July 30, 2026. Pick a new provider and enter its key.',
+}
+
+/**
+ * Google Gemini via its OpenAI-compatible endpoint. A free-tier AI Studio
+ * key is metered as per-model daily request allowances (the caps vary by
+ * model and account), which is why billing is `quota` — the successor to the
+ * role GitHub Models played. Vision included on Flash-class models.
+ */
+export const gemini: Provider = defineProvider({
+  id: 'gemini',
+  label: 'Google Gemini',
+  baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
   billing: {
     kind: 'quota',
     unit: 'requests',
     period: 'daily',
-    source: 'GitHub account (free tier)',
+    source: 'Google AI Studio (free tier)',
   },
   credentials: [
     {
       key: 'apiKey',
-      label: 'GitHub personal access token',
+      label: 'Gemini API key',
       secret: true,
-      envVar: 'GITHUB_MODELS_TOKEN',
-      placeholder: 'github_pat_…',
-      helpUrl: 'https://github.com/settings/personal-access-tokens',
+      envVar: 'GEMINI_API_KEY',
+      placeholder: 'AIza…',
+      helpUrl: 'https://aistudio.google.com/apikey',
     },
   ],
-  docsUrl: 'https://docs.github.com/github-models',
-}
+  docsUrl: 'https://ai.google.dev/gemini-api/docs/openai',
+})
+
+/**
+ * OpenRouter — a meta-provider fronting hundreds of models behind one key
+ * and one OpenAI-compatible endpoint. Its public `GET /models` is the
+ * richest discovery source available (421 models on 2026-08-22, including
+ * `:free` variants), and it works without a key — which is what lets a host
+ * app show a live catalog before the user has configured anything.
+ */
+export const openrouter: Provider = defineProvider({
+  id: 'openrouter',
+  label: 'OpenRouter',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  billing: {
+    kind: 'per-token',
+    currency: 'USD',
+    billingUrl: 'https://openrouter.ai/credits',
+  },
+  credentials: [
+    {
+      key: 'apiKey',
+      label: 'OpenRouter API key',
+      secret: true,
+      envVar: 'OPENROUTER_API_KEY',
+      placeholder: 'sk-or-…',
+      helpUrl: 'https://openrouter.ai/keys',
+    },
+  ],
+  docsUrl: 'https://openrouter.ai/docs',
+})
 
 /** xAI (Grok). Pay-per-token; not available through GitHub Models. */
 export const xai: Provider = defineProvider({
@@ -255,7 +292,8 @@ export const zai: Provider = defineProvider({
 
 /** Every provider bundled with the kit. */
 export const builtInProviders: Provider[] = [
-  githubModels,
+  gemini,
+  openrouter,
   xai,
   deepseek,
   zai,

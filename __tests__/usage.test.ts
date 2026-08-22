@@ -6,7 +6,7 @@ import {
   createMemoryStorage,
   credentialStorageKey,
   formatUsage,
-  githubModels,
+  gemini,
   readTokenUsage,
   resolveModel,
   mergeCatalog,
@@ -17,16 +17,16 @@ import {
 
 const catalog: ModelInfo[] = [
   {
-    id: 'openai/gpt-4.1-mini',
-    provider: 'github-models',
+    id: 'gemini-3.7-flash',
+    provider: 'gemini',
     label: 'GPT-4.1 mini',
     vision: true,
     dailyLimit: 150,
     supportsJsonMode: true,
   },
   {
-    id: 'deepseek/deepseek-v3-0324',
-    provider: 'github-models',
+    id: 'gemini-3.5-flash-lite',
+    provider: 'gemini',
     label: 'DeepSeek V3',
     vision: false,
     dailyLimit: 50,
@@ -50,9 +50,9 @@ function completion(content: string, usage?: Record<string, number>) {
 describe('usage summaries are shaped by the provider’s billing model', () => {
   it('a quota provider reports allowance remaining, not raw tokens', () => {
     const summary = summarizeRecord({
-      billing: githubModels.billing,
-      providerId: 'github-models',
-      modelId: 'openai/gpt-4.1-mini',
+      billing: gemini.billing,
+      providerId: 'gemini',
+      modelId: 'gemini-3.7-flash',
       record: { requests: 8, promptTokens: 4000, completionTokens: 1000 },
       tokens: { promptTokens: 4000, completionTokens: 1000, totalTokens: 5000 },
       dailyLimit: 150,
@@ -62,7 +62,7 @@ describe('usage summaries are shaped by the provider’s billing model', () => {
     if (summary.kind !== 'quota') throw new Error('unreachable')
     expect(summary.limit).toBe(150)
     expect(summary.remaining).toBe(142)
-    expect(summary.source).toBe('GitHub account (free tier)')
+    expect(summary.source).toBe('Google AI Studio (free tier)')
     expect(formatUsage(summary)).toBe('142 of 150 requests left today')
   })
 
@@ -135,8 +135,8 @@ describe('usage summaries are shaped by the provider’s billing model', () => {
 
   it('refuses to invent a cap for a quota provider with no known limit', () => {
     const summary = summarizeRecord({
-      billing: githubModels.billing,
-      providerId: 'github-models',
+      billing: gemini.billing,
+      providerId: 'gemini',
       modelId: 'some/unlisted-model',
       record: { requests: 5, promptTokens: 0, completionTokens: 0 },
       tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
@@ -161,19 +161,19 @@ describe('usage accounting', () => {
     const client = createAiClient({
       storage: createMemoryStorageBundle({
         secrets: {
-          [credentialStorageKey('github-models', 'apiKey')]: 'pat-token',
+          [credentialStorageKey('gemini', 'apiKey')]: 'pat-token',
         },
       }),
-      providers: [githubModels],
+      providers: [gemini],
       catalog,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
 
     await client.chat([{ role: 'user', content: 'x' }], {
-      model: 'openai/gpt-4.1-mini',
+      model: 'gemini-3.7-flash',
     })
     const second = await client.chat([{ role: 'user', content: 'y' }], {
-      model: 'openai/gpt-4.1-mini',
+      model: 'gemini-3.7-flash',
     })
 
     expect(second.tokens).toEqual({
@@ -182,7 +182,7 @@ describe('usage accounting', () => {
       totalTokens: 27,
     })
 
-    const summary = await client.usageFor('openai/gpt-4.1-mini')
+    const summary = await client.usageFor('gemini-3.7-flash')
     if (summary.kind !== 'quota') throw new Error('expected quota summary')
     expect(summary.requests).toBe(2)
     expect(summary.remaining).toBe(148)
@@ -201,19 +201,19 @@ describe('usage accounting', () => {
     const client = createAiClient({
       storage: createMemoryStorageBundle({
         secrets: {
-          [credentialStorageKey('github-models', 'apiKey')]: 'pat-token',
+          [credentialStorageKey('gemini', 'apiKey')]: 'pat-token',
         },
       }),
-      providers: [githubModels],
+      providers: [gemini],
       catalog,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
 
     await client
-      .chat([{ role: 'user', content: 'x' }], { model: 'openai/gpt-4.1-mini' })
+      .chat([{ role: 'user', content: 'x' }], { model: 'gemini-3.7-flash' })
       .catch(() => undefined)
 
-    const record = await client.usage.read('github-models', 'openai/gpt-4.1-mini')
+    const record = await client.usage.read('gemini', 'gemini-3.7-flash')
     expect(record.requests).toBe(0)
   })
 
@@ -224,12 +224,12 @@ describe('usage accounting', () => {
       now: () => now,
     })
 
-    await tracker.record('github-models', 'openai/gpt-4.1-mini')
-    await tracker.record('github-models', 'openai/gpt-4.1-mini')
-    expect((await tracker.read('github-models', 'openai/gpt-4.1-mini')).requests).toBe(2)
+    await tracker.record('gemini', 'gemini-3.7-flash')
+    await tracker.record('gemini', 'gemini-3.7-flash')
+    expect((await tracker.read('gemini', 'gemini-3.7-flash')).requests).toBe(2)
 
     now = new Date('2026-07-19T12:00:00Z')
-    expect((await tracker.read('github-models', 'openai/gpt-4.1-mini')).requests).toBe(0)
+    expect((await tracker.read('gemini', 'gemini-3.7-flash')).requests).toBe(0)
   })
 
   it('survives a storage backend that throws', async () => {
@@ -248,10 +248,10 @@ describe('usage accounting', () => {
 
     // Best-effort persistence must never take down a working call.
     await expect(
-      tracker.record('github-models', 'openai/gpt-4.1-mini'),
+      tracker.record('gemini', 'gemini-3.7-flash'),
     ).resolves.toBeDefined()
     await expect(
-      tracker.isRateLimited('github-models', 'openai/gpt-4.1-mini'),
+      tracker.isRateLimited('gemini', 'gemini-3.7-flash'),
     ).resolves.toBe(false)
   })
 })
@@ -282,30 +282,30 @@ describe('resolveModel', () => {
   it('honours the user’s selection when it satisfies the task', () => {
     const model = resolveModel({
       catalog,
-      selected: 'deepseek/deepseek-v3-0324',
-      available: ['github-models'],
+      selected: 'gemini-3.5-flash-lite',
+      available: ['gemini'],
     })
-    expect(model?.id).toBe('deepseek/deepseek-v3-0324')
+    expect(model?.id).toBe('gemini-3.5-flash-lite')
   })
 
   it('prefers a fallback on the same provider, to avoid needing new credentials', () => {
     const model = resolveModel({
       catalog,
-      selected: 'deepseek/deepseek-v3-0324',
+      selected: 'gemini-3.5-flash-lite',
       requirements: { vision: true },
-      available: ['github-models', 'xai'],
+      available: ['gemini', 'xai'],
     })
     // grok-4.5 also has vision, but staying on github-models is cheaper for the user.
-    expect(model?.provider).toBe('github-models')
-    expect(model?.id).toBe('openai/gpt-4.1-mini')
+    expect(model?.provider).toBe('gemini')
+    expect(model?.id).toBe('gemini-3.7-flash')
   })
 
   it('widens to another provider when the selected one cannot comply', () => {
     const model = resolveModel({
       catalog: [catalog[1]!, catalog[2]!],
-      selected: 'deepseek/deepseek-v3-0324',
+      selected: 'gemini-3.5-flash-lite',
       requirements: { vision: true },
-      available: ['github-models', 'xai'],
+      available: ['gemini', 'xai'],
     })
     expect(model?.id).toBe('grok-4.5')
   })
@@ -324,7 +324,7 @@ describe('resolveModel', () => {
       resolveModel({
         catalog: [catalog[1]!],
         requirements: { vision: true },
-        available: ['github-models'],
+        available: ['gemini'],
       }),
     ).toBeUndefined()
   })
@@ -334,13 +334,13 @@ describe('mergeCatalog', () => {
   it('keeps curated metadata when discovery reports the same model', () => {
     const merged = mergeCatalog(catalog, [
       {
-        id: 'openai/gpt-4.1-mini',
-        provider: 'github-models',
+        id: 'gemini-3.7-flash',
+        provider: 'gemini',
         label: 'Discovered label',
         vision: true,
       },
     ])
-    const entry = merged.find((m) => m.id === 'openai/gpt-4.1-mini')
+    const entry = merged.find((m) => m.id === 'gemini-3.7-flash')
     // Hand-authored limit and label survive; discovery only fills gaps.
     expect(entry?.dailyLimit).toBe(150)
     expect(entry?.label).toBe('GPT-4.1 mini')
@@ -349,7 +349,7 @@ describe('mergeCatalog', () => {
 
   it('appends models the curated catalog does not know', () => {
     const merged = mergeCatalog(catalog, [
-      { id: 'openai/gpt-5', provider: 'github-models', label: 'GPT-5', vision: true },
+      { id: 'openai/gpt-5', provider: 'gemini', label: 'GPT-5', vision: true },
     ])
     expect(merged).toHaveLength(catalog.length + 1)
     expect(merged.at(-1)?.id).toBe('openai/gpt-5')

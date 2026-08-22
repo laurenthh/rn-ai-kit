@@ -6,7 +6,7 @@ import {
   createMemoryStorageBundle,
   credentialStorageKey,
   defineAiTask,
-  githubModels,
+  gemini,
   parseJson,
   repairTruncatedJson,
   type ModelInfo,
@@ -14,16 +14,16 @@ import {
 
 const catalog: ModelInfo[] = [
   {
-    id: 'openai/gpt-4.1-mini',
-    provider: 'github-models',
+    id: 'gemini-3.7-flash',
+    provider: 'gemini',
     label: 'GPT-4.1 mini',
     vision: true,
     dailyLimit: 150,
     supportsJsonMode: true,
   },
   {
-    id: 'deepseek/deepseek-v3-0324',
-    provider: 'github-models',
+    id: 'gemini-3.5-flash-lite',
+    provider: 'gemini',
     label: 'DeepSeek V3',
     vision: false,
     dailyLimit: 50,
@@ -46,10 +46,10 @@ function makeClient(fetchImpl: ReturnType<typeof vi.fn>) {
   return createAiClient({
     storage: createMemoryStorageBundle({
       secrets: {
-        [credentialStorageKey('github-models', 'apiKey')]: 'pat-token',
+        [credentialStorageKey('gemini', 'apiKey')]: 'pat-token',
       },
     }),
-    providers: [githubModels],
+    providers: [gemini],
     catalog,
     fetchImpl: fetchImpl as unknown as typeof fetch,
   })
@@ -125,13 +125,13 @@ describe('defineAiTask', () => {
         completion('{"category":"hotel","confidence":1,"title":"Hotel"}'),
       )
     const client = makeClient(fetchImpl)
-    await client.setSelectedModel('deepseek/deepseek-v3-0324', 'github-models')
+    await client.setSelectedModel('gemini-3.5-flash-lite', 'gemini')
 
     await classifyDocument.run(client, { imageBase64: 'AAA' })
 
     // The text-only selection would have broken document scanning outright.
     expect(JSON.parse(fetchImpl.mock.calls[0]![1].body).model).toBe(
-      'openai/gpt-4.1-mini',
+      'gemini-3.7-flash',
     )
   })
 
