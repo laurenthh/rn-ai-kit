@@ -227,12 +227,12 @@ type DiscoveredModel = { id?: unknown; name?: unknown }
 /**
  * Parse a `GET /models` response into catalog entries.
  *
- * Handles both the OpenAI envelope (`{ data: [...] }`) and the bare array
- * GitHub Models returns. Capability flags are only set when the payload
- * actually reports them — GitHub Models exposes
- * `supported_input_modalities`, most others expose nothing, and a discovered
- * entry with unknown vision support is marked `vision: false` so it is never
- * auto-selected for a vision task on a guess.
+ * Handles both the OpenAI envelope (`{ data: [...] }`) and a bare array.
+ * Capability flags are only set when the payload actually reports them —
+ * `supported_input_modalities` (GitHub Models' shape, historical) or
+ * `architecture.input_modalities` (OpenRouter's shape); most others expose
+ * nothing, and a discovered entry with unknown vision support is marked
+ * `vision: false` so it is never auto-selected for a vision task on a guess.
  */
 export function parseDiscoveredModels(
   providerId: string,
@@ -248,8 +248,12 @@ export function parseDiscoveredModels(
   const models: ModelInfo[] = []
   for (const raw of list as DiscoveredModel[]) {
     if (typeof raw?.id !== 'string') continue
-    const modalities = (raw as { supported_input_modalities?: unknown })
+    const flat = (raw as { supported_input_modalities?: unknown })
       .supported_input_modalities
+    const nested = (
+      raw as { architecture?: { input_modalities?: unknown } }
+    ).architecture?.input_modalities
+    const modalities = Array.isArray(flat) ? flat : nested
     const vision = Array.isArray(modalities)
       ? modalities.includes('image')
       : false

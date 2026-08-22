@@ -1,6 +1,6 @@
 {
   "name": "rn-ai-kit",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Provider-agnostic LLM client for the copilot apps — multi-provider chat, credential handling, billing-aware usage tracking, and schema-validated tasks. No React Native imports, no runtime dependencies.",
   "license": "MIT",
   "main": "./dist/index.js",

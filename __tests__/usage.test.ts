@@ -10,6 +10,7 @@ import {
   readTokenUsage,
   resolveModel,
   mergeCatalog,
+  parseDiscoveredModels,
   summarizeRecord,
   xai,
   type ModelInfo,
@@ -353,5 +354,24 @@ describe('mergeCatalog', () => {
     ])
     expect(merged).toHaveLength(catalog.length + 1)
     expect(merged.at(-1)?.id).toBe('openai/gpt-5')
+  })
+})
+
+describe('parseDiscoveredModels payload shapes', () => {
+  it('reads vision from both the flat and the nested modalities shape', () => {
+    const models = parseDiscoveredModels('openrouter', {
+      data: [
+        {
+          id: 'google/gemini-3.7-flash',
+          name: 'Gemini 3.7 Flash',
+          architecture: { input_modalities: ['text', 'image'] },
+        },
+        { id: 'text-only/model', architecture: { input_modalities: ['text'] } },
+        { id: 'legacy/flat', supported_input_modalities: ['text', 'image'] },
+        { id: 'no-capability-info/model' },
+      ],
+    })
+    expect(models.map((m) => m.vision)).toEqual([true, false, true, false])
+    expect(models[0]?.label).toBe('Gemini 3.7 Flash')
   })
 })
