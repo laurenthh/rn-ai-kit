@@ -301,6 +301,18 @@ describe('resolveModel', () => {
     expect(model?.id).toBe('gemini-3.7-flash')
   })
 
+  it('stays on the selected provider when the selected id has left the catalog', () => {
+    // A stored selection of a since-retired model (e.g. grok-3) must not jump
+    // to the first catalog entry on a different provider.
+    const model = resolveModel({
+      catalog,
+      selected: 'grok-3',
+      selectedProvider: 'xai',
+      available: ['gemini', 'xai'],
+    })
+    expect(model?.id).toBe('grok-4.5')
+  })
+
   it('widens to another provider when the selected one cannot comply', () => {
     const model = resolveModel({
       catalog: [catalog[1]!, catalog[2]!],
