@@ -8,9 +8,14 @@
  * this case, and they are two distinct entries here).
  *
  * Seeded ids were verified against each vendor's own API reference or live
- * models endpoint (gemini/openrouter on 2026-08-22; xai/deepseek/zai on
- * 2026-07-18). Ids churn; treat this as a starting point and use
- * `discoverModels()` for a live list.
+ * models endpoint on 2026-10-06 (all five providers). Ids churn; treat this as
+ * a starting point and use `discoverModels()` for a live list.
+ *
+ * Every seed is a concrete model id, never a `-latest` or tier alias: usage
+ * and rate-limit state is keyed per model id, and an alias that the vendor
+ * re-points would silently carry that state over to a different model.
+ * Retired ids are removed even when the vendor still redirects them, because
+ * the redirect target is a different model at a different price.
  */
 
 import type { ModelPricing } from './usage'
@@ -41,33 +46,43 @@ export type ModelInfo = {
 
 /**
  * Google Gemini entries (OpenAI-compatible endpoint). Ids verified against
- * Google's model documentation on 2026-08-22 (`gemini-3.7-flash` GA
- * 2026-08-13). No `dailyLimit` is seeded: free-tier caps vary by model,
+ * Google's model documentation and pricing page on 2026-10-06
+ * (`gemini-3.8-flash` GA 2026-09-02; `gemini-3.7-flash` GA 2026-08-13, not
+ * deprecated). No `dailyLimit` is seeded: free-tier caps vary by model,
  * region, and account, and AI Studio shows the live number — a wrong cap
  * displayed as fact is worse than none.
  */
 export const geminiCatalog: ModelInfo[] = [
+  {
+    id: 'gemini-3.8-flash',
+    provider: 'gemini',
+    label: 'Gemini 3.8 Flash',
+    vision: true,
+    supportsJsonMode: true,
+    contextNotes:
+      'Free-tier eligible; image + PDF input. Thinking level "minimal" is rejected.',
+  },
   {
     id: 'gemini-3.7-flash',
     provider: 'gemini',
     label: 'Gemini 3.7 Flash',
     vision: true,
     supportsJsonMode: true,
-    contextNotes: 'Default. Free-tier eligible; image + PDF input.',
+    contextNotes: 'Free-tier eligible; image + PDF input.',
   },
 ]
 
 /**
  * OpenRouter entries. Ids verified against the live public
- * `GET https://openrouter.ai/api/v1/models` on 2026-08-22 — but this seed is
+ * `GET https://openrouter.ai/api/v1/models` on 2026-10-06 — but this seed is
  * a starting point only: the whole point of OpenRouter is its live catalog,
  * so hosts should prefer `discoverModels('openrouter')` (public, keyless).
  */
 export const openrouterCatalog: ModelInfo[] = [
   {
-    id: 'google/gemini-3.7-flash',
+    id: 'google/gemini-3.8-flash',
     provider: 'openrouter',
-    label: 'Gemini 3.7 Flash (OpenRouter)',
+    label: 'Gemini 3.8 Flash (OpenRouter)',
     vision: true,
     supportsJsonMode: true,
   },
@@ -76,6 +91,7 @@ export const openrouterCatalog: ModelInfo[] = [
     provider: 'openrouter',
     label: 'Gemma 4 31B (free)',
     vision: true,
+    supportsJsonMode: true,
     contextNotes: 'Free variant — rate-limited, availability rotates.',
   },
 ]
@@ -87,8 +103,21 @@ export const openrouterCatalog: ModelInfo[] = [
  * No `pricing` is set: the kit does not ship price data it has not verified,
  * and vendor prices change without notice. Supply pricing per model from the
  * app if you want cost estimates.
+ *
+ * Verified 2026-10-06 against docs.x.ai/docs/models (per-model
+ * `inputModalities` + `structuredOutputs`), api-docs.deepseek.com
+ * (pricing + vision guide) and docs.z.ai (per-model pages + structured-output
+ * guide). Within a provider the first entry is what a stale or unusable
+ * selection falls back to, so order newest-first.
  */
 export const directProviderCatalog: ModelInfo[] = [
+  {
+    id: 'grok-4.7',
+    provider: 'xai',
+    label: 'Grok 4.7',
+    vision: true,
+    supportsJsonMode: true,
+  },
   {
     id: 'grok-4.5',
     provider: 'xai',
@@ -97,9 +126,27 @@ export const directProviderCatalog: ModelInfo[] = [
     supportsJsonMode: true,
   },
   {
-    id: 'grok-3',
+    id: 'grok-4.3',
     provider: 'xai',
-    label: 'Grok 3',
+    label: 'Grok 4.3',
+    vision: true,
+    supportsJsonMode: true,
+    contextNotes: 'Target of xAI\'s redirect for models retired 2026-05-15 (incl. grok-3).',
+  },
+  {
+    // Canonical dated id; `grok-4.20` is an alias of it.
+    id: 'grok-4.20-0309-reasoning',
+    provider: 'xai',
+    label: 'Grok 4.20 (reasoning)',
+    vision: true,
+    supportsJsonMode: true,
+  },
+  {
+    // DeepSeek's only Flash id — unversioned, but there is no pinned
+    // alternative. The legacy `deepseek-v4-flash` now silently serves this.
+    id: 'deepseek-flash',
+    provider: 'deepseek',
+    label: 'DeepSeek V4.1 Flash',
     vision: true,
     supportsJsonMode: true,
   },
@@ -109,13 +156,29 @@ export const directProviderCatalog: ModelInfo[] = [
     label: 'DeepSeek V4 Pro',
     vision: false,
     supportsJsonMode: true,
+    contextNotes: 'Pinned to DeepSeek-V4-Pro-0813.',
   },
   {
-    id: 'deepseek-v4-flash',
-    provider: 'deepseek',
-    label: 'DeepSeek V4 Flash',
+    id: 'glm-5.3',
+    provider: 'zai',
+    label: 'GLM-5.3',
     vision: false,
     supportsJsonMode: true,
+  },
+  {
+    id: 'glm-5.3-flash',
+    provider: 'zai',
+    label: 'GLM-5.3 Flash',
+    vision: true,
+    supportsJsonMode: true,
+  },
+  {
+    id: 'glm-4.7-flash',
+    provider: 'zai',
+    label: 'GLM-4.7 Flash',
+    vision: false,
+    supportsJsonMode: true,
+    contextNotes: 'Free.',
   },
   {
     id: 'glm-4.6',
@@ -204,16 +267,14 @@ export function resolveModel(input: {
     )
     if (exact) return exact
 
-    // Selection is unusable — prefer staying on its provider.
-    const selectedEntry = findModel(
-      input.catalog,
-      input.selected,
-      input.selectedProvider,
-    )
-    if (selectedEntry) {
-      const sameProvider = usable.find(
-        (m) => m.provider === selectedEntry.provider,
-      )
+    // Selection is unusable — prefer staying on its provider. A selection whose
+    // id has since left the catalog (a retired model) still names its
+    // provider via `selectedProvider`.
+    const selectedProvider =
+      findModel(input.catalog, input.selected, input.selectedProvider)
+        ?.provider ?? input.selectedProvider
+    if (selectedProvider) {
+      const sameProvider = usable.find((m) => m.provider === selectedProvider)
       if (sameProvider) return sameProvider
     }
   }
