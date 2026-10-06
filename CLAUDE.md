@@ -34,16 +34,28 @@ At the end of the session, write a log to `../Memory/AI/sessions/YYYY-MM-DD-clau
   `GET /models` before trusting them; `discoverModels()` + `mergeCatalog()`
   exist for this.
 
-## Verified facts (2026-07-18)
+## Verified facts (2026-10-06)
 
-- GitHub Models' catalog is **publicly readable without a token**:
-  `curl https://models.github.ai/catalog/models`.
-- That catalog carries **no Grok and no GLM**, and its DeepSeek entries are
-  **text-only** (no vision). Those models are only reachable through the
-  vendors' own APIs — the reason the provider abstraction exists.
-- All four bundled providers speak the OpenAI chat-completions wire format with
-  bearer auth. That is a property of these providers, not an assumption baked
-  into the `Provider` type.
+- The catalog's model ids were re-verified on 2026-10-06 against each
+  vendor's own API reference or live models endpoint (see the `src/catalog.ts`
+  header). Provider base URLs and auth schemes were verified earlier, per the
+  `src/providers.ts` comment (2026-07-18 for xai/deepseek/zai, 2026-08-22 for
+  gemini/openrouter).
+- All five bundled providers (gemini, openrouter, xai, deepseek, zai) speak
+  the OpenAI chat-completions wire format with bearer auth. That is a property
+  of these providers, not an assumption baked into the `Provider` type.
+- GitHub Models is **no longer bundled**: GitHub retired it on 2026-07-30 and
+  its endpoints return 410 (`retiredProviders` in `src/providers.ts`). The
+  earlier finding (checked 2026-07-18, not re-verified since) was that its
+  public catalog carried no Grok and no GLM and its DeepSeek entries were
+  text-only — those models are only reachable through the vendors' own APIs,
+  which is the reason the provider abstraction exists.
+
+## Branches and releases
+
+v1.x releases come from `feature/provider-refresh-v1`, while `main` holds the
+unreleased v2 work. A catalog refresh made on v1 must be ported to `main`
+before the next v2 release.
 
 ## Workflow
 
