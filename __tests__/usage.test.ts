@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  builtInCatalog,
   createAiClient,
   createMemoryStorageBundle,
   createUsageTracker,
@@ -311,6 +312,80 @@ describe('resolveModel', () => {
       available: ['gemini', 'xai'],
     })
     expect(model?.id).toBe('grok-4.5')
+  })
+
+  describe('retired-id fallback against the real builtInCatalog', () => {
+    it('falls back from a retired xai id to the first xai entry', () => {
+      const model = resolveModel({
+        catalog: builtInCatalog,
+        selected: 'grok-3',
+        selectedProvider: 'xai',
+        available: ['gemini', 'openrouter', 'xai', 'deepseek', 'zai'],
+      })
+      expect(model?.provider).toBe('xai')
+      expect(model?.id).toBe('grok-4.7')
+    })
+
+    it('falls back from a retired deepseek id to the first deepseek entry', () => {
+      const model = resolveModel({
+        catalog: builtInCatalog,
+        selected: 'deepseek-v4-flash',
+        selectedProvider: 'deepseek',
+        available: ['gemini', 'xai', 'deepseek'],
+      })
+      expect(model?.provider).toBe('deepseek')
+      expect(model?.id).toBe('deepseek-flash')
+    })
+
+    it('without selectedProvider, a removed id falls back to the first usable model overall', () => {
+      // Documents current behaviour: with no provider to anchor to, a removed
+      // id cannot stay on its provider, so the result is usable[0] — the first
+      // entry in catalog order among available providers (gemini is first).
+      const available = ['xai', 'deepseek', 'gemini']
+      const model = resolveModel({
+        catalog: builtInCatalog,
+        selected: 'grok-3',
+        available,
+      })
+      const firstUsable = builtInCatalog.find((m) =>
+        available.includes(m.provider),
+      )
+      expect(model).toBe(firstUsable)
+      expect(model?.id).toBe('gemini-3.8-flash')
+    })
+
+    it('still returns a vision model on the same provider when vision is required', () => {
+      const available = ['xai', 'deepseek']
+      const xaiModel = resolveModel({
+        catalog: builtInCatalog,
+        selected: 'grok-3',
+        selectedProvider: 'xai',
+        requirements: { vision: true },
+        available,
+      })
+      expect(xaiModel?.provider).toBe('xai')
+      expect(xaiModel?.vision).toBe(true)
+
+      const deepseekModel = resolveModel({
+        catalog: builtInCatalog,
+        selected: 'deepseek-v4-flash',
+        selectedProvider: 'deepseek',
+        requirements: { vision: true },
+        available,
+      })
+      expect(deepseekModel?.provider).toBe('deepseek')
+      expect(deepseekModel?.vision).toBe(true)
+
+      // A live but text-only selection must also skip to a vision sibling.
+      const textOnly = resolveModel({
+        catalog: builtInCatalog,
+        selected: 'deepseek-v4-pro',
+        selectedProvider: 'deepseek',
+        requirements: { vision: true },
+        available,
+      })
+      expect(textOnly?.id).toBe('deepseek-flash')
+    })
   })
 
   it('widens to another provider when the selected one cannot comply', () => {
